@@ -14,9 +14,10 @@ export const GET = async (request) => {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    studentId = payload.studentId;
+    studentId = payload.studentId; //error while payload is undefined or null
 
     //read role information from "payload" here (just one line code!)
+    role = payload.role;
     //role = ...
   } catch {
     return NextResponse.json(
@@ -29,17 +30,21 @@ export const GET = async (request) => {
   }
 
   //Check role here. If user is "ADMIN" show all of the enrollments instead
-  //   return NextResponse.json({
-  //     ok: true,
-  //     enrollments: null //replace null with enrollment data!
-  // }
-
+  if (role == "ADMIN") {
+    return NextResponse.json({
+      ok: true,
+      enrollments: DB.enrollments, //replace null with enrollment data!
+    });
+  }
+  //std
   const courseNoList = [];
   for (const enroll of DB.enrollments) {
+    //course of specific student
     if (enroll.studentId === studentId) {
       courseNoList.push(enroll.courseNo);
     }
   }
+
   return NextResponse.json({
     ok: true,
     courseNoList,
@@ -50,6 +55,7 @@ export const POST = async (request) => {
   //verify token
   const rawAuthHeader = headers().get("authorization");
   const token = rawAuthHeader.split(" ")[1];
+
   let studentId = null;
   //preparing "role" variable for reading role information from token
   let role = null;
@@ -58,7 +64,7 @@ export const POST = async (request) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     studentId = payload.studentId;
     //read role information from "payload" here (just one line code!)
-    //role = ...
+    role = payload.role;
   } catch {
     return NextResponse.json(
       {
@@ -70,13 +76,15 @@ export const POST = async (request) => {
   }
 
   //if role is "ADMIN", send the following response
-  // return NextResponse.json(
-  //   {
-  //     ok: true,
-  //     message: "Only Student can access this API route",
-  //   },
-  //   { status: 403 }
-  // );
+  if (role == "ADMIN") {
+    return NextResponse.json(
+      {
+        ok: true,
+        message: "Only Student can access this API route",
+      },
+      { status: 403 }
+    );
+  }
 
   //read body request
   const body = await request.json();
@@ -91,7 +99,7 @@ export const POST = async (request) => {
     );
   }
 
-  const foundCourse = DB.courses.find((x) => x.courseNo === courseNo);
+  const foundCourse = DB.courses.find((x) => x.courseNo === courseNo); //Check if exists in Database
   if (!foundCourse) {
     return NextResponse.json(
       {
@@ -128,50 +136,68 @@ export const POST = async (request) => {
 
 export const DELETE = async (request) => {
   //check token
-  //verify token and get "studentId" and "role" information here
+  const rawAuthHeader = headers().get("authorization");
+  const token = rawAuthHeader.split(" ")[1];
   let studentId = null;
   let role = null;
-
-  //if role is "ADMIN", send the following response
-  // return NextResponse.json(
-  //   {
-  //     ok: true,
-  //     message: "Only Student can access this API route",
-  //   },
-  //   { status: 403 }
-  // );
-
-  //get courseNo from body and validate it
-  const body = await request.json();
-  const { courseNo } = body;
-  if (typeof courseNo !== "string" || courseNo.length !== 6) {
+  //verify token and get "studentId" and "role" information here
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    studentId = payload.studentId;
+    //read role information from "payload" here (just one line code!)
+    role = payload.role;
+  } catch {
     return NextResponse.json(
       {
         ok: false,
-        message: "courseNo must contain 6 characters",
+        message: "Invalid token",
       },
-      { status: 400 }
+      { status: 401 }
     );
   }
 
-  const foundIndex = DB.enrollments.findIndex(
-    (x) => x.studentId === studentId && x.courseNo === courseNo
-  );
-  if (foundIndex === -1) {
+  // if role is "ADMIN", send the following response
+  if (role == "ADMIN") {
     return NextResponse.json(
       {
-        ok: false,
-        message:
-          "You cannot drop from this course. You have not enrolled it yet!",
+        ok: true,
+        message: "Only Student can access this API route",
       },
-      { status: 404 }
+      { status: 403 }
     );
+  } else {
+    //get courseNo from body and validate it
+    const body = await request.json();
+    const { courseNo } = body;
+    if (typeof courseNo !== "string" || courseNo.length !== 6) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "courseNo must contain 6 characters",
+        },
+        { status: 400 }
+      );
+    }
+
+    const foundIndex = DB.enrollments.findIndex(
+      (x) => x.studentId === studentId && x.courseNo === courseNo
+    );
+    if (foundIndex === -1) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            "You cannot drop from this course. You have not enrolled it yet!",
+        },
+        { status: 404 }
+      );
+    }
+
+    DB.enrollments.splice(foundIndex, 1);
+
+    return NextResponse.json({
+      ok: true,
+      message: "You has dropped from this course. See you next semester.",
+    });
   }
-
-  DB.enrollments.splice(foundIndex, 1);
-
-  return NextResponse.json({
-    ok: true,
-    message: "You has dropped from this course. See you next semester.",
-  });
 };
